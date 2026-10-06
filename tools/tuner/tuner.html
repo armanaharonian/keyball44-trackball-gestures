@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Keyball44 Trackball Tuner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,600..800&family=IBM+Plex+Sans:wght@400;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="/style.css">
+<style>body { margin: 0; }</style>
+</head>
+<body>
+<div class="app">
+  <header class="app-head">
+    <div>
+      <div class="eyebrow"><span>Keyball44</span><span>trackball · build + flash</span></div>
+      <h1>Trackball Tuner</h1>
+      <p>Change how the trackball behaves, then press <b>Build and flash</b>. This page edits <code>keymap/keymap.c</code>, builds the firmware with Docker and installs it. You only press one key when asked.</p>
+    </div>
+    <span class="pill" id="status">Loading…</span>
+  </header>
+
+  <div class="callout warn" style="margin-top:18px">
+    <span class="callout-title">Before you flash</span>
+    <p>Close Vial (the app and any vial.rocks tab). If you changed keys in Vial, save them first into the <code>layouts</code> folder (File → Save current layout); otherwise the flash stops to protect them. Change one thing at a time so you can tell what made the difference.</p>
+  </div>
+
+  <div id="groups"></div>
+
+  <div class="panel" id="progress" hidden>
+    <h2>Build and flash</h2>
+    <ol class="stages" id="stages"></ol>
+    <div id="press" class="press" hidden>Press the boot key now: right half, bottom row, the outermost key (under <kbd>P</kbd>). Then don't type until this page says it's done.</div>
+    <div id="outcome"></div>
+    <details id="log-wrap"><summary>Show the full log</summary><pre class="log" id="log"></pre></details>
+  </div>
+
+  <div class="actionbar">
+    <span id="bar-text" class="muted">No changes.</span>
+    <div class="row">
+      <button class="btn" id="discard" type="button" disabled>Discard changes</button>
+      <button class="btn primary" id="apply" type="button" disabled>Build and flash</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// Each setting: what it does in plain words and which direction does what.
+// kind "frac": a speed as NUM/DEN; "faster" multiplies it. kind "div": bigger = slower.
+// kind "size": bigger = needs more travel / more time.
+const GROUPS = [
+  { title: "Pointer · layer 2", items: [
+    { kind: "frac", num: "BALL_POINTER_NUM", den: "BALL_POINTER_DEN", name: "Cursor speed",
+      text: "How fast the cursor moves, as a fraction of the sensor's own speed. 1/1 is the sensor's speed; above 1 is faster.", },
+    { kind: "frac", num: "BALL_SNIPE_NUM", den: "BALL_SNIPE_DEN", name: "Sniping speed",
+      text: "Cursor speed while sniping (precise mode, the HK_S_MODE key). Sniping already slows the sensor; this slows it further." },
+  ]},
+  { title: "Scroll · layer 1", items: [
+    { kind: "div", key: "BALL_SCROLL_DIVISOR", name: "Scroll speed", unit: "",
+      text: "Ball motion is divided by this number to make scroll. A smaller number scrolls faster.", },
+  ]},
+  { title: "App switcher · layer 0 (nothing held)", items: [
+    { kind: "size", key: "APP_SWITCH_STEP", name: "Distance per app", unit: "counts",
+      text: "How far you roll sideways to move one app in Cmd+Tab. 800 counts = one inch.", less: "More sensitive", more: "Less sensitive" },
+    { kind: "size", key: "APP_SWITCH_TIMEOUT_MS", name: "Time before switching", unit: "ms",
+      text: "How long after your last move the switcher waits before letting go of Cmd and switching. Too short and it switches before you finish choosing.", less: "Switch sooner", more: "More time to choose" },
+    { kind: "size", key: "APP_SWITCH_LOCK_TRAVEL", name: "Direction decision", unit: "counts",
+      text: "How far a movement goes before it's judged sideways (switch apps) or vertical (ignored).", less: "Reacts quicker", more: "Fewer accidental switches" },
+    { kind: "size", key: "APP_SWITCH_GESTURE_GAP_MS", name: "Pause that ends a gesture", unit: "ms",
+      text: "How long the ball must be completely still for a gesture to end. Rarely needs changing.", less: "Shorter", more: "Longer" },
+  ]},
+  { title: "Volume and brightness · layers 4 and 5", items: [
+    { kind: "size", key: "BALL_KEY_STEP", name: "Distance per step", unit: "counts",
+      text: "How far you roll up or down for one volume or brightness step.", less: "Faster changes", more: "Finer control" },
+  ]},
+];
+
+let flashed = {}, work = {}, polling = null;
+const $ = (id) => document.getElementById(id);
+
+function changedKeys() { return Object.keys(work).filter((k) => work[k] !== flashed[k]); }
+
+function numberInput(key, onChange) {
+  const inp = document.createElement("input");
+  inp.type = "number"; inp.min = 1; inp.step = 1; inp.id = "in-" + key; inp.value = work[key];
+  inp.addEventListener("input", () => {
+    const v = parseInt(inp.value, 10);
+    if (v > 0) { inp.classList.remove("invalid"); work[key] = v; onChange(); } else inp.classList.add("invalid");
+  });
+  return inp;
+}
+
+function factorButton(text, apply) {
+  const b = document.createElement("button");
+  b.type = "button"; b.className = "btn small"; b.textContent = text;
+  b.onclick = apply;
+  return b;
+}
+
+function card(item) {
+  const el = document.createElement("div");
+  el.className = "setting";
+  const head = document.createElement("div"); head.className = "setting-head";
+  const nm = document.createElement("strong"); nm.textContent = item.name;
+  const now = document.createElement("span"); now.className = "setting-now";
+  head.append(nm, now);
+  const p = document.createElement("p"); p.textContent = item.text;
+  el.append(head, p);
+  if (item.history) { const h = document.createElement("p"); h.className = "muted"; h.textContent = item.history; el.appendChild(h); }
+
+  const inputs = document.createElement("div"); inputs.className = "inputs";
+  const calc = document.createElement("div"); calc.className = "calc";
+  const dir = document.createElement("div"); dir.className = "row";
+  const code = document.createElement("div"); code.className = "calc";
+  const keys = item.kind === "frac" ? [item.num, item.den] : [item.key];
+  code.textContent = keys.join(" / ");
+
+  function refresh() {
+    const changed = keys.some((k) => work[k] !== flashed[k]);
+    el.classList.toggle("changed", changed);
+    if (item.kind === "frac") {
+      now.textContent = `on keyboard: ${flashed[item.num]}/${flashed[item.den]}`;
+      const v = work[item.num] / work[item.den], was = flashed[item.num] / flashed[item.den];
+      calc.textContent = `= ${v.toFixed(3)}× sensor speed` + (changed ? ` (${v > was ? "+" : ""}${Math.round((v / was - 1) * 100)}% vs now)` : "");
+    } else {
+      now.textContent = `on keyboard: ${flashed[item.key]}${item.unit ? " " + item.unit : ""}`;
+      calc.textContent = changed ? `${Math.round((work[item.key] / flashed[item.key] - 1) * 100)}% vs now` : "";
+    }
+    keys.forEach((k) => { const i = document.getElementById("in-" + k); if (i && document.activeElement !== i) i.value = work[k]; });
+    updateBar();
+  }
+
+  if (item.kind === "frac") {
+    const over = document.createElement("span"); over.className = "over"; over.textContent = "/";
+    inputs.append(numberInput(item.num, refresh), over, numberInput(item.den, refresh));
+    const scale = (f) => () => { work[item.num] = Math.max(1, Math.round(work[item.num] * f)); refresh(); };
+    dir.append(factorButton("Slower ×0.8", scale(0.8)), factorButton("Faster ×1.25", scale(1.25)));
+  } else {
+    inputs.append(numberInput(item.key, refresh));
+    const scale = (f) => () => { work[item.key] = Math.max(1, Math.round(work[item.key] * f)); refresh(); };
+    if (item.kind === "div") dir.append(factorButton("Slower ×1.25", scale(1.25)), factorButton("Faster ×0.8", scale(0.8)));
+    else dir.append(factorButton(`${item.less} ×0.8`, scale(0.8)), factorButton(`${item.more} ×1.25`, scale(1.25)));
+  }
+  dir.append(factorButton("Reset", () => { keys.forEach((k) => (work[k] = flashed[k])); refresh(); }));
+  el.append(inputs, calc, dir, code);
+  el.refresh = refresh;
+  return el;
+}
+
+function render() {
+  const wrap = $("groups");
+  wrap.innerHTML = "";
+  GROUPS.forEach((g) => {
+    const t = document.createElement("div"); t.className = "group-title"; t.textContent = g.title;
+    const grid = document.createElement("div"); grid.className = "settings-grid";
+    g.items.forEach((it) => { const c = card(it); grid.appendChild(c); c.refresh(); });
+    wrap.append(t, grid);
+  });
+  updateBar();
+}
+
+function updateBar() {
+  const ch = changedKeys();
+  const busy = polling !== null;
+  $("apply").disabled = ch.length === 0 || busy;
+  $("discard").disabled = ch.length === 0 || busy;
+  $("bar-text").textContent = busy ? "Building and flashing…"
+    : ch.length ? `Changed: ${ch.map((k) => `${k} ${flashed[k]} → ${work[k]}`).join(", ")}` : "No changes.";
+}
+
+const STAGES = [["save", "Save keymap.c"], ["docker", "Docker"], ["build", "Build"], ["flash", "Flash"], ["done", "Done"]];
+
+function renderJob(j) {
+  $("progress").hidden = false;
+  const at = STAGES.findIndex(([k]) => k === j.stage);
+  $("stages").innerHTML = "";
+  STAGES.forEach(([k, name], i) => {
+    const li = document.createElement("li");
+    li.textContent = name;
+    if (j.state === "error" && i === at) li.className = "fail";
+    else if (i < at || j.state === "done") li.className = "done";
+    else if (i === at) li.className = "now";
+    $("stages").appendChild(li);
+  });
+  $("press").hidden = !(j.press && j.state === "running");
+  const log = $("log");
+  const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
+  log.textContent = j.lines.join("\n");
+  if (atBottom) log.scrollTop = log.scrollHeight;
+  const out = $("outcome");
+  out.innerHTML = "";
+  if (j.state === "done" || j.state === "error") {
+    const box = document.createElement("div");
+    box.className = "notice " + (j.state === "done" ? "ok" : "err");
+    const b = document.createElement("b");
+    b.textContent = j.state === "done" ? "Done. The new firmware is on the keyboard and your keys are back. Try it out." : j.error;
+    box.appendChild(b);
+    out.appendChild(box);
+    if (j.state === "error") $("log-wrap").open = true;
+  }
+}
+
+function poll() {
+  polling = setInterval(async () => {
+    try {
+      const j = await fetch("/api/job").then((x) => x.json());
+      renderJob(j);
+      if (j.state !== "running") {
+        clearInterval(polling); polling = null;
+        await load(); render(); status(j.state === "done" ? "good" : "bad", j.state === "done" ? "Flashed" : "Last flash failed");
+      }
+    } catch (e) {
+      clearInterval(polling); polling = null; status("bad", "The tuner stopped. Run ./tuner.sh again."); updateBar();
+    }
+  }, 700);
+  updateBar();
+}
+
+function status(kind, text) { $("status").className = "pill " + kind; $("status").textContent = text; }
+
+async function load() {
+  const s = await fetch("/api/settings").then((x) => x.json());
+  flashed = s.values; work = { ...s.values };
+  if (!polling) status(s.layout ? "good" : "bad", s.layout ? `Values from keymap.c · layout ${s.layout}` : "No layout in the layouts folder yet");
+  return s;
+}
+
+$("discard").onclick = () => { work = { ...flashed }; render(); };
+$("apply").onclick = async () => {
+  const values = {};
+  changedKeys().forEach((k) => (values[k] = work[k]));
+  const r = await fetch("/api/apply", { method: "POST", body: JSON.stringify({ values }) }).then((x) => x.json());
+  if (!r.ok) { status("bad", r.error); return; }
+  status("", "Building and flashing…");
+  $("log-wrap").open = false;
+  $("progress").scrollIntoView({ behavior: "smooth", block: "start" });
+  poll();
+};
+
+load().then((s) => {
+  render();
+  if (s.busy) { status("", "Building and flashing…"); poll(); }
+}).catch(() => status("bad", "The tuner stopped. Run ./tuner.sh again."));
+</script>
+</body>
+</html>

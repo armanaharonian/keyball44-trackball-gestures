@@ -1,0 +1,14 @@
+# Downloaded by ./setup.sh
+vial-qmk/
+qmk-userspace/
+tools/.venv/
+
+# Built by ./build.sh
+firmware.uf2
+
+# Your own layouts stay on your computer; only the starter layout is shared.
+layouts/*.vil
+!layouts/starter.vil
+
+__pycache__/
+.DS_Store
