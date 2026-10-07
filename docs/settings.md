@@ -52,19 +52,25 @@ How long after your last step the switcher waits before letting go of Cmd, which
 
 ### `APP_SWITCH_LOCK_TRAVEL` (default 20)
 
-How far a gesture travels (in counts) before the code decides whether it's sideways (switch apps) or vertical (ignored). Higher = fewer accidental switches; lower = reacts quicker.
+How far a gesture travels (in counts) before the code decides whether it's sideways (switch apps) or vertical (ignored). Higher = fewer accidental switches; lower = reacts quicker. Layer 4 uses it too, to tell songs (sideways) from volume (up/down).
 
 ### `APP_SWITCH_GESTURE_GAP_MS` (default 150)
 
-How long the ball must be completely still for a gesture to end and its direction decision to reset. Rarely needs changing.
+How long the ball must be completely still for a gesture to end and its direction decision to reset. Also used on layer 4. Rarely needs changing.
 
-## Volume and brightness (layers 4 and 5)
+## Volume, songs and brightness (layers 4 and 5)
 
 ### `BALL_KEY_STEP` (default 100)
 
 How far you roll up or down (in counts) for one volume or brightness step. Higher = finer control; lower = faster changes.
 
 Brightness sends the `KC_BRIU` / `KC_BRID` keys. If macOS ignores them on your Mac, change them in the main function to `KC_BRMU` / `KC_BRMD` (the brightness keys of Apple's external keyboards).
+
+### `BALL_TRACK_STEP` (default 300)
+
+Layer 4 only: how far you roll sideways (in counts) to skip to the next song (right) or previous song (left). Higher = fewer accidental skips; lower = a shorter roll. 400 felt like too much rolling. Each pause of `APP_SWITCH_GESTURE_GAP_MS` starts the count over, so one longer roll works better than several short flicks.
+
+Songs use the `KC_MNXT` / `KC_MPRV` media keys; macOS sends them to whatever is playing. In most players the first "previous" restarts the current song and a second one goes back.
 
 ## Layer numbers
 

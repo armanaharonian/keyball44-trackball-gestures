@@ -23,7 +23,7 @@ LAYOUTS = ROOT / "layouts"
 DEFINE_RE = r"^(#\s*define\s+{name}\s+)(-?\d+)(\s*)$"
 SETTINGS = ["BALL_POINTER_NUM", "BALL_POINTER_DEN", "BALL_SNIPE_NUM", "BALL_SNIPE_DEN", "BALL_SCROLL_DIVISOR",
             "APP_SWITCH_STEP", "APP_SWITCH_TIMEOUT_MS", "APP_SWITCH_GESTURE_GAP_MS", "APP_SWITCH_LOCK_TRAVEL",
-            "BALL_KEY_STEP"]
+            "BALL_KEY_STEP", "BALL_TRACK_STEP"]
 
 
 def newest_layout():

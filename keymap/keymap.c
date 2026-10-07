@@ -90,7 +90,7 @@ layer_state_t layer_state_set_user(layer_state_t state) {
 //   0: app switcher (sideways only; vertical motion is ignored)
 //   1: vertical scroll
 //   3: drag scroll (userspace, see layer_state_set_user)
-//   4: volume (ball up/down taps volume up/down)
+//   4: media (ball up/down taps volume up/down, sideways skips tracks)
 //   5: screen brightness (ball up/down taps brightness up/down)
 //   any other: normal pointer
 //
@@ -111,6 +111,11 @@ layer_state_t layer_state_set_user(layer_state_t state) {
 // Vertical ball travel, in sensor counts, per volume/brightness key tap.
 #ifndef BALL_KEY_STEP
 #    define BALL_KEY_STEP 100
+#endif
+
+// Sideways ball travel, in sensor counts, per next/previous track on layer 4.
+#ifndef BALL_TRACK_STEP
+#    define BALL_TRACK_STEP 300
 #endif
 
 // Ball travel, in sensor counts (800 CPI by default), per switcher step.
@@ -153,10 +158,10 @@ layer_state_t layer_state_set_user(layer_state_t state) {
 #    define APP_SWITCH_LOCK_TRAVEL 20
 #endif
 
-typedef enum { AXIS_NONE, AXIS_HORIZONTAL, AXIS_VERTICAL } app_switch_axis_t;
+typedef enum { AXIS_NONE, AXIS_HORIZONTAL, AXIS_VERTICAL } ball_axis_t;
 
 static bool              app_switch_active = false;
-static app_switch_axis_t app_switch_axis   = AXIS_NONE;
+static ball_axis_t       app_switch_axis   = AXIS_NONE;
 static int32_t           app_switch_acc_x  = 0;
 static int32_t           app_switch_acc_y  = 0;
 static uint16_t          app_switch_last_motion;
@@ -226,6 +231,77 @@ static void ball_key_steps(int16_t y, uint16_t up, uint16_t down) {
     }
 }
 
+// Layer 4: ball up/down changes the volume, sideways skips to the next (right)
+// or previous (left) track. Each gesture is locked to one axis like the
+// switcher (APP_SWITCH_LOCK_TRAVEL, APP_SWITCH_GESTURE_GAP_MS), so wobble while
+// changing the volume never skips a track. Motion is handled in windows of
+// APP_SWITCH_LOCK_TRAVEL counts: each window goes to the locked axis, and the
+// lock flips only when the other axis moved more than twice as far in a window.
+static ball_axis_t media_axis      = AXIS_NONE;
+static int32_t     media_win_x     = 0;
+static int32_t     media_win_y     = 0;
+static int32_t     media_track_acc = 0;
+static uint16_t    media_last_motion;
+
+static void media_reset_gesture(void) {
+    media_axis      = AXIS_NONE;
+    media_win_x     = 0;
+    media_win_y     = 0;
+    media_track_acc = 0;
+}
+
+static void ball_media(int16_t x, int16_t y) {
+    if (x == 0 && y == 0) {
+        if (timer_elapsed(media_last_motion) > APP_SWITCH_GESTURE_GAP_MS) {
+            media_reset_gesture();
+        }
+        return;
+    }
+    media_last_motion = timer_read();
+
+    media_win_x += x;
+    media_win_y += y;
+    const int32_t ax = abs(media_win_x);
+    const int32_t ay = abs(media_win_y);
+    if (ax < APP_SWITCH_LOCK_TRAVEL && ay < APP_SWITCH_LOCK_TRAVEL) {
+        return;
+    }
+
+    ball_axis_t axis = media_axis;
+    if (axis == AXIS_NONE) {
+        axis = ax > ay ? AXIS_HORIZONTAL : AXIS_VERTICAL;
+    } else if (axis == AXIS_VERTICAL && ax > 2 * ay) {
+        axis = AXIS_HORIZONTAL;
+    } else if (axis == AXIS_HORIZONTAL && ay > 2 * ax) {
+        axis = AXIS_VERTICAL;
+    }
+    if (axis != media_axis) {
+        // Partial travel on the other axis must not finish a step later.
+        if (axis == AXIS_HORIZONTAL) {
+            ball_key_acc = 0;
+        } else {
+            media_track_acc = 0;
+        }
+        media_axis = axis;
+    }
+
+    if (axis == AXIS_HORIZONTAL) {
+        media_track_acc += media_win_x;
+        while (media_track_acc >= BALL_TRACK_STEP) {
+            media_track_acc -= BALL_TRACK_STEP;
+            tap_code(KC_MNXT);
+        }
+        while (media_track_acc <= -BALL_TRACK_STEP) {
+            media_track_acc += BALL_TRACK_STEP;
+            tap_code(KC_MPRV);
+        }
+    } else {
+        ball_key_steps(media_win_y, KC_VOLU, KC_VOLD);
+    }
+    media_win_x = 0;
+    media_win_y = 0;
+}
+
 static void app_switch_step(bool right) {
     app_switch_last_step = timer_read();
     if (!app_switch_active) {
@@ -242,6 +318,9 @@ report_mouse_t pointing_device_task_combined_keymap(report_mouse_t mouse_report)
     if (layer != BALL_VOLUME_LAYER && layer != BALL_BRIGHTNESS_LAYER) {
         ball_key_acc = 0;
     }
+    if (layer != BALL_VOLUME_LAYER) {
+        media_reset_gesture();
+    }
 
     if (layer != 0) {
         app_switch_end();
@@ -252,7 +331,7 @@ report_mouse_t pointing_device_task_combined_keymap(report_mouse_t mouse_report)
             mouse_report.y = 0;
         } else if (layer == BALL_VOLUME_LAYER || layer == BALL_BRIGHTNESS_LAYER) {
             if (layer == BALL_VOLUME_LAYER) {
-                ball_key_steps(mouse_report.y, KC_VOLU, KC_VOLD);
+                ball_media(mouse_report.x, mouse_report.y);
             } else {
                 ball_key_steps(mouse_report.y, KC_BRIU, KC_BRID);
             }

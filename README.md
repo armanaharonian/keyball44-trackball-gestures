@@ -7,7 +7,7 @@ One trackball, many jobs. This is a Vial firmware for the **holykeebs Keyball44*
 | nothing | **Switches apps** (Cmd+Tab): roll sideways to pick an app, let go to switch |
 | a layer 1 key | **Scrolls** up and down |
 | a layer 2 key | **Moves the mouse pointer** (and a precise "sniping" mode) |
-| a layer 4 key | **Changes the volume**: roll up/down |
+| a layer 4 key | **Changes the volume**: roll up/down. Roll sideways for the next/previous song |
 | a layer 5 key | **Changes the screen brightness**: roll up/down |
 
 You choose which keys reach each layer in Vial, like any other key. Nothing switches by itself: the ball only does what the key you're holding says.
@@ -152,7 +152,7 @@ This project includes `layouts/starter.vil`, the layout it was designed with. It
 |---|---|---|---|
 | <kbd>Space</kbd> (tap for space) | 1 | scrolls | numbers, arrows |
 | <kbd>S</kbd> (tap for s) or the <kbd>Backspace</kbd> thumb | 2 | moves the pointer | <kbd>V</kbd> = left click, <kbd>B</kbd> = right click, hold the <kbd>Enter</kbd> thumb = precise pointer |
-| <kbd>J</kbd> (tap for j) | 4 | volume | — |
+| <kbd>J</kbd> (tap for j) | 4 | volume, songs | — |
 | <kbd>K</kbd> (tap for k) | 5 | brightness | — |
 | <kbd>F</kbd> / <kbd>D</kbd> / <kbd>V</kbd> | — | — | hold for Cmd / Alt / Ctrl |
 
@@ -182,6 +182,7 @@ Keep your layout and just add keys for the layers you want:
 - **Scroll:** hold your layer 1 key and roll up/down.
 - **Pointer:** hold your layer 2 key and move the ball. Click with your Mouse 1 / Mouse 2 keys.
 - **Volume / brightness:** hold your layer 4 or 5 key and roll up/down.
+- **Songs:** hold your layer 4 key and roll sideways: right for the next song, left for the previous one.
 
 > **Tip:** a tap-dance key only becomes a layer after its tapping term (the hold time). Until then, the ball still switches apps. If you start moving the ball too early when holding <kbd>S</kbd>, lower its tapping term a bit.
 
@@ -213,6 +214,7 @@ All settings are numbers near the top of [`keymap/keymap.c`](keymap/keymap.c). C
 | `APP_SWITCH_LOCK_TRAVEL` | 20 | How far a move goes before it's judged sideways or vertical | fewer accidental switches: raise it |
 | `APP_SWITCH_GESTURE_GAP_MS` | 150 | Stillness that ends a gesture | rarely needs changing |
 | `BALL_KEY_STEP` | 100 | How far you roll per volume/brightness step | finer control: raise it |
+| `BALL_TRACK_STEP` | 300 | How far you roll sideways per song on layer 4 | shorter roll: lower it |
 
 macOS speeds up scrolling and pointer motion, so changes feel non-linear. Change by a factor (×0.8, ×1.25) rather than by a fixed amount, and change one thing at a time. [docs/settings.md](docs/settings.md) explains each one in detail.
 

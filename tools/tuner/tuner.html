@@ -66,13 +66,15 @@ const GROUPS = [
     { kind: "size", key: "APP_SWITCH_TIMEOUT_MS", name: "Time before switching", unit: "ms",
       text: "How long after your last move the switcher waits before letting go of Cmd and switching. Too short and it switches before you finish choosing.", less: "Switch sooner", more: "More time to choose" },
     { kind: "size", key: "APP_SWITCH_LOCK_TRAVEL", name: "Direction decision", unit: "counts",
-      text: "How far a movement goes before it's judged sideways (switch apps) or vertical (ignored).", less: "Reacts quicker", more: "Fewer accidental switches" },
+      text: "How far a movement goes before it's judged sideways (switch apps) or vertical (ignored). Layer 4 uses it too, to tell songs from volume.", less: "Reacts quicker", more: "Fewer accidental switches" },
     { kind: "size", key: "APP_SWITCH_GESTURE_GAP_MS", name: "Pause that ends a gesture", unit: "ms",
       text: "How long the ball must be completely still for a gesture to end. Rarely needs changing.", less: "Shorter", more: "Longer" },
   ]},
-  { title: "Volume and brightness · layers 4 and 5", items: [
+  { title: "Volume, songs and brightness · layers 4 and 5", items: [
     { kind: "size", key: "BALL_KEY_STEP", name: "Distance per step", unit: "counts",
       text: "How far you roll up or down for one volume or brightness step.", less: "Faster changes", more: "Finer control" },
+    { kind: "size", key: "BALL_TRACK_STEP", name: "Distance per song", unit: "counts",
+      text: "Layer 4: how far you roll sideways to skip to the next song (right) or previous song (left). 800 counts = one inch.", less: "Shorter roll", more: "Fewer accidental skips" },
   ]},
 ];
 

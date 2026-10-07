@@ -42,7 +42,7 @@ This firmware asks only one question: *which is the highest layer that's on righ
 | 0 | App switcher (Cmd+Tab), sideways only |
 | 1 | Vertical scroll |
 | 3 | Drag scroll (scroll in any direction, a holykeebs feature) |
-| 4 | Volume up/down |
+| 4 | Volume up/down; sideways = next/previous song |
 | 5 | Brightness up/down |
 | anything else (2, 6, 7) | Normal pointer |
 
@@ -129,6 +129,7 @@ while (ball_key_acc <= -BALL_KEY_STEP) {
 | `ball_scroll` | Turns vertical motion into scroll, divided by `BALL_SCROLL_DIVISOR` |
 | `ball_pointer_scale` | Multiplies pointer motion by a fraction (the pointer speed) |
 | `ball_key_steps` | Turns vertical motion into volume or brightness taps |
+| `ball_media` | Layer 4: locks each gesture to one direction; up/down goes to `ball_key_steps` (volume), sideways taps next/previous song |
 | `app_switch_step` | One switcher step: Cmd+Tab first, then arrows |
 | `pointing_device_task_combined_keymap` | **The main function.** Runs on every ball report and picks the ball's job |
 | `hk_pointing_devices_detected_keymap` | Tells VIA/Vial which half has the ball |
@@ -139,9 +140,10 @@ while (ball_key_acc <= -BALL_KEY_STEP) {
 
 1. It asks which layer is highest.
 2. **Layer 1:** vertical motion becomes scroll; the pointer stays still.
-3. **Layers 4 and 5:** vertical motion becomes volume or brightness taps.
-4. **Other layers (except 0):** the motion is scaled by the pointer speed fraction (or the sniping one) and moves the pointer.
-5. **Layer 0, the app switcher:** the pointer never moves here. Instead:
+3. **Layer 4:** like the switcher, each gesture first picks a direction from its first `APP_SWITCH_LOCK_TRAVEL` counts, so a wobbly volume roll never skips a song. Up/down becomes volume taps; sideways taps next song (right) or previous song (left) every `BALL_TRACK_STEP` counts. The direction is re-checked every `APP_SWITCH_LOCK_TRAVEL` counts and flips only when the other direction moved more than 2× as far.
+4. **Layer 5:** vertical motion becomes brightness taps.
+5. **Other layers (except 0):** the motion is scaled by the pointer speed fraction (or the sniping one) and moves the pointer.
+6. **Layer 0, the app switcher:** the pointer never moves here. Instead:
    - **Close on a timer.** If Cmd is held and `APP_SWITCH_TIMEOUT_MS` passed since the last step, Cmd is released and macOS switches.
    - **End a gesture on stillness.** No motion for `APP_SWITCH_GESTURE_GAP_MS` ends the gesture.
    - **Lock a direction.** A gesture adds up travel until one direction reaches `APP_SWITCH_LOCK_TRAVEL`. Vertical gestures do nothing, so moving your hand up and down never switches apps.
