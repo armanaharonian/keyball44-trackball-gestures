@@ -48,6 +48,8 @@ LAYER_FN = {"TO": 0x5200, "MO": 0x5220, "DF": 0x5240, "TG": 0x5260, "OSL": 0x528
 
 
 def kc(name):
+    if isinstance(name, int) and name >= 0:
+        return name  # raw 16-bit keycode, as written by dump_vil.py
     if name == -1:
         return None
     if name in BASIC:
