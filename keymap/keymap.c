@@ -313,34 +313,58 @@ static void app_switch_step(bool right) {
     }
 }
 
-// Herdr mode: while the Mac reports that the terminal running herdr is the
-// front app (tools/herdr-watch.py sends HERDR_MODE_MSG over raw HID), the ball
-// on layer 0 moves focus between herdr panes instead of switching apps. One
-// pane step per HERDR_PANE_STEP counts of travel, on the dominant axis, as
-// ctrl+alt+h/j/k/l (the focus_pane_* chords in herdr's config.toml).
-#define HERDR_MODE_MSG 0x7E
-#define HERDR_ID_UNHANDLED 0xFF
-
-#ifndef HERDR_PANE_STEP
-#    define HERDR_PANE_STEP 150
+// Hold Y and roll the ball to move between herdr panes; hold U to change tab
+// (left/right) or workspace (up/down). One step per HERDR_STEP counts of travel
+// on the dominant axis, sent as ctrl+alt+h/j/k/l (focus_pane_*) or
+// ctrl+alt+shift+arrow (previous_tab, next_tab, previous_workspace,
+// next_workspace in herdr's config.toml).
+//
+// Y and U still type. The letter goes out on release if the ball never
+// stepped, or as soon as another key is pressed during the hold, so fast
+// typing keeps its order. Holding them no longer auto-repeats.
+#ifndef HERDR_STEP
+#    define HERDR_STEP 150
 #endif
 
-static bool     herdr_mode = false;
-static int32_t  herdr_acc_x = 0;
-static int32_t  herdr_acc_y = 0;
-static uint16_t herdr_last_motion;
+typedef enum { HERDR_NONE, HERDR_PANES, HERDR_TABS } herdr_target_t;
 
-void raw_hid_receive_kb(uint8_t* data, uint8_t length) {
-    if (data[0] == HERDR_MODE_MSG) {
-        herdr_mode = data[1] != 0;
-        herdr_acc_x = 0;
-        herdr_acc_y = 0;
-        return; // VIA echoes the buffer back as the acknowledgement
+static herdr_target_t herdr_target = HERDR_NONE;
+static uint16_t       herdr_key;       // the held key, KC_Y or KC_U
+static bool           herdr_key_spent; // its letter was typed or the ball stepped
+static int32_t        herdr_acc_x;
+static int32_t        herdr_acc_y;
+static uint16_t       herdr_last_motion;
+
+bool process_record_keymap(uint16_t keycode, keyrecord_t* record) {
+    if (keycode == KC_Y || keycode == KC_U) {
+        if (record->event.pressed) {
+            if (herdr_target != HERDR_NONE) {
+                return true; // the other one is already held: just type
+            }
+            herdr_target    = keycode == KC_Y ? HERDR_PANES : HERDR_TABS;
+            herdr_key       = keycode;
+            herdr_key_spent = false;
+            herdr_acc_x     = 0;
+            herdr_acc_y     = 0;
+            return false;
+        }
+        if (herdr_target != HERDR_NONE && keycode == herdr_key) {
+            if (!herdr_key_spent) {
+                tap_code(herdr_key);
+            }
+            herdr_target = HERDR_NONE;
+            return false;
+        }
+        return true;
     }
-    data[0] = HERDR_ID_UNHANDLED;
+    if (record->event.pressed && herdr_target != HERDR_NONE && !herdr_key_spent) {
+        tap_code(herdr_key);
+        herdr_key_spent = true;
+    }
+    return true;
 }
 
-static void herdr_panes(int16_t x, int16_t y) {
+static void herdr_ball(int16_t x, int16_t y) {
     if (x == 0 && y == 0) {
         if (timer_elapsed(herdr_last_motion) > APP_SWITCH_GESTURE_GAP_MS) {
             herdr_acc_x = 0;
@@ -353,16 +377,22 @@ static void herdr_panes(int16_t x, int16_t y) {
     herdr_acc_y += y;
     const int32_t ax = abs(herdr_acc_x);
     const int32_t ay = abs(herdr_acc_y);
-    if (ax < HERDR_PANE_STEP && ay < HERDR_PANE_STEP) {
+    if (ax < HERDR_STEP && ay < HERDR_STEP) {
         return;
     }
+    const bool tabs = herdr_target == HERDR_TABS;
+    uint16_t   chord;
     if (ax >= ay) {
-        tap_code16(herdr_acc_x > 0 ? C(A(KC_L)) : C(A(KC_H)));
+        const bool right = herdr_acc_x > 0;
+        chord            = tabs ? C(A(S(right ? KC_RGHT : KC_LEFT))) : C(A(right ? KC_L : KC_H));
     } else {
-        tap_code16(herdr_acc_y > 0 ? C(A(KC_J)) : C(A(KC_K)));
+        const bool down = herdr_acc_y > 0;
+        chord           = tabs ? C(A(S(down ? KC_DOWN : KC_UP))) : C(A(down ? KC_J : KC_K));
     }
-    herdr_acc_x = 0;
-    herdr_acc_y = 0;
+    tap_code16(chord);
+    herdr_key_spent = true;
+    herdr_acc_x     = 0;
+    herdr_acc_y     = 0;
 }
 
 report_mouse_t pointing_device_task_combined_keymap(report_mouse_t mouse_report) {
@@ -400,16 +430,14 @@ report_mouse_t pointing_device_task_combined_keymap(report_mouse_t mouse_report)
         return mouse_report;
     }
 
-    if (herdr_mode) {
+    if (herdr_target != HERDR_NONE) {
         app_switch_end();
         app_switch_reset_gesture();
-        herdr_panes(mouse_report.x, mouse_report.y);
+        herdr_ball(mouse_report.x, mouse_report.y);
         mouse_report.x = 0;
         mouse_report.y = 0;
         return mouse_report;
     }
-    herdr_acc_x = 0;
-    herdr_acc_y = 0;
 
     // Released on a timer from the last step rather than from the last motion:
     // a hand resting on the ball keeps reporting tiny movements, which would
