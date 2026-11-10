@@ -94,6 +94,8 @@ Layer 0 is always the app switcher and layer 3 drag scroll. Every other layer is
 | `keymap/rules.mk` | `RGB_MATRIX_ENABLE`, `VIA_ENABLE`, `VIAL_ENABLE` | yes | Turn those features on |
 | `build.sh` | `OLED` | yes | `OLED=no ./build.sh` builds without the OLED screen |
 
+See also [my-changes.md](my-changes.md) for the changes made to this copy.
+
 ## Hold times are in Vial, not here
 
 How long you hold a key before it becomes a layer is a **tap dance** setting in Vial (**Tap Dance** tab, **Tapping term**). No firmware install needed. Until that time passes, the ball still does the app switcher, so for the pointer key a short term (around 170 ms) feels best.
