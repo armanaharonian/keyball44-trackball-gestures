@@ -2,6 +2,19 @@
 
 Every change made to this setup, newest first. Add a line here each time something changes.
 
+## 2026-11-10: Ball moves between herdr panes (automatic)
+
+- **What:** while Ghostty (the terminal that runs herdr) is the front app, rolling the ball with no key held moves focus between herdr panes: right, left, down, up. In every other app the ball still does Cmd+Tab.
+- **How:** `tools/herdr-watch.py` checks the front app and sends one raw-HID message (`0x7E`, on or off) to the keyboard. The firmware (`keymap/keymap.c`, `herdr_panes`) then taps `ctrl+alt+h/j/k/l` per `HERDR_PANE_STEP` (150) counts of travel. Herdr maps those chords to `focus_pane_*` in `~/.config/herdr/config.toml`.
+- **Limit:** the watcher knows the app, not the pane. Any Ghostty window counts as herdr mode.
+- **Needs:** firmware flashed (`./flash.sh`, after saving your layout in Vial), and the watcher running. Install it with `sed "s|__REPO__|$PWD|g" tools/com.armanaharonian.herdr-watch.plist > ~/Library/LaunchAgents/com.armanaharonian.herdr-watch.plist && launchctl load ~/Library/LaunchAgents/com.armanaharonian.herdr-watch.plist`. macOS asks once to let it control System Events.
+- **Status:** firmware built, not flashed. Watcher not installed.
+- **Undo:** `launchctl unload` the plist, remove it, and reflash without `herdr_panes`.
+
+## 2026-11-10: herdr Ctrl+W closes the pane
+
+- **What:** `close_pane = ["prefix+x", "ctrl+w"]` in `~/.config/herdr/config.toml`. `Ctrl+W` no longer deletes a word inside a pane. Backups: `config.toml.bak3`, `config.toml.bak4`.
+
 ## 2026-11-10: Control moves to hold-G
 
 - **What:** the `G` key (base layer, `keymap/keymap.c`) is now `LCTL_T(KC_G)`. Tap it for `g`. Hold it for `Control`.

@@ -313,6 +313,58 @@ static void app_switch_step(bool right) {
     }
 }
 
+// Herdr mode: while the Mac reports that the terminal running herdr is the
+// front app (tools/herdr-watch.py sends HERDR_MODE_MSG over raw HID), the ball
+// on layer 0 moves focus between herdr panes instead of switching apps. One
+// pane step per HERDR_PANE_STEP counts of travel, on the dominant axis, as
+// ctrl+alt+h/j/k/l (the focus_pane_* chords in herdr's config.toml).
+#define HERDR_MODE_MSG 0x7E
+#define HERDR_ID_UNHANDLED 0xFF
+
+#ifndef HERDR_PANE_STEP
+#    define HERDR_PANE_STEP 150
+#endif
+
+static bool     herdr_mode = false;
+static int32_t  herdr_acc_x = 0;
+static int32_t  herdr_acc_y = 0;
+static uint16_t herdr_last_motion;
+
+void raw_hid_receive_kb(uint8_t* data, uint8_t length) {
+    if (data[0] == HERDR_MODE_MSG) {
+        herdr_mode = data[1] != 0;
+        herdr_acc_x = 0;
+        herdr_acc_y = 0;
+        return; // VIA echoes the buffer back as the acknowledgement
+    }
+    data[0] = HERDR_ID_UNHANDLED;
+}
+
+static void herdr_panes(int16_t x, int16_t y) {
+    if (x == 0 && y == 0) {
+        if (timer_elapsed(herdr_last_motion) > APP_SWITCH_GESTURE_GAP_MS) {
+            herdr_acc_x = 0;
+            herdr_acc_y = 0;
+        }
+        return;
+    }
+    herdr_last_motion = timer_read();
+    herdr_acc_x += x;
+    herdr_acc_y += y;
+    const int32_t ax = abs(herdr_acc_x);
+    const int32_t ay = abs(herdr_acc_y);
+    if (ax < HERDR_PANE_STEP && ay < HERDR_PANE_STEP) {
+        return;
+    }
+    if (ax >= ay) {
+        tap_code16(herdr_acc_x > 0 ? C(A(KC_L)) : C(A(KC_H)));
+    } else {
+        tap_code16(herdr_acc_y > 0 ? C(A(KC_J)) : C(A(KC_K)));
+    }
+    herdr_acc_x = 0;
+    herdr_acc_y = 0;
+}
+
 report_mouse_t pointing_device_task_combined_keymap(report_mouse_t mouse_report) {
     const uint8_t layer = get_highest_layer(layer_state);
     if (layer != BALL_VOLUME_LAYER && layer != BALL_BRIGHTNESS_LAYER) {
@@ -347,6 +399,17 @@ report_mouse_t pointing_device_task_combined_keymap(report_mouse_t mouse_report)
         }
         return mouse_report;
     }
+
+    if (herdr_mode) {
+        app_switch_end();
+        app_switch_reset_gesture();
+        herdr_panes(mouse_report.x, mouse_report.y);
+        mouse_report.x = 0;
+        mouse_report.y = 0;
+        return mouse_report;
+    }
+    herdr_acc_x = 0;
+    herdr_acc_y = 0;
 
     // Released on a timer from the last step rather than from the last motion:
     // a hand resting on the ball keeps reporting tiny movements, which would
