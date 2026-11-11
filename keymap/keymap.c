@@ -313,13 +313,13 @@ static void app_switch_step(bool right) {
     }
 }
 
-// Hold Y and roll the ball to move between herdr panes; hold U to change tab
+// Hold U and roll the ball to move between herdr panes; hold I to change tab
 // (left/right) or workspace (up/down). One step per HERDR_STEP counts of travel
 // on the dominant axis, sent as ctrl+alt+h/j/k/l (focus_pane_*) or
 // ctrl+alt+shift+arrow (previous_tab, next_tab, previous_workspace,
 // next_workspace in herdr's config.toml).
 //
-// Y and U still type. The letter goes out on release if the ball never
+// U and I still type. The letter goes out on release if the ball never
 // stepped, or as soon as another key is pressed during the hold, so fast
 // typing keeps its order. Holding them no longer auto-repeats.
 #ifndef HERDR_STEP
@@ -329,19 +329,50 @@ static void app_switch_step(bool right) {
 typedef enum { HERDR_NONE, HERDR_PANES, HERDR_TABS } herdr_target_t;
 
 static herdr_target_t herdr_target = HERDR_NONE;
-static uint16_t       herdr_key;       // the held key, KC_Y or KC_U
+static uint16_t       herdr_key;       // the held key, KC_U or KC_I
 static bool           herdr_key_spent; // its letter was typed or the ball stepped
 static int32_t        herdr_acc_x;
 static int32_t        herdr_acc_y;
 static uint16_t       herdr_last_motion;
 
+// Hold the layer button (MO(1)) and roll the ball to drive herdr instead of
+// scrolling. Start rolling within HERDR_LAYER_PANES_MS of pressing it to move
+// between panes; start later to change tab (left/right) or workspace
+// (up/down). Space (LT(1, KC_SPC)) turns on the same layer and still scrolls.
+#ifndef HERDR_LAYER_PANES_MS
+#    define HERDR_LAYER_PANES_MS 150
+#endif
+
+static bool           herdr_layer_held;
+static uint16_t       herdr_layer_pressed_at;
+static herdr_target_t herdr_layer_target; // decided by the first roll of each hold
+
+// Hold R (Vial tap dance 11: tap r, hold HERDR_RENAME) renames the focused
+// herdr pane. Sent once per hold as ctrl+alt+r, which herdr's config.toml maps
+// to rename_pane; a held chord would auto-repeat into the rename prompt.
+#define HERDR_RENAME QK_USER_0 // 0x7E40
+
 bool process_record_keymap(uint16_t keycode, keyrecord_t* record) {
-    if (keycode == KC_Y || keycode == KC_U) {
+    if (keycode == HERDR_RENAME) {
+        if (record->event.pressed) {
+            tap_code16(C(A(KC_R)));
+        }
+        return false;
+    }
+    if (keycode == MO(BALL_SCROLL_LAYER)) {
+        herdr_layer_held       = record->event.pressed;
+        herdr_layer_pressed_at = timer_read();
+        herdr_layer_target     = HERDR_NONE;
+        herdr_acc_x            = 0;
+        herdr_acc_y            = 0;
+        return true;
+    }
+    if (keycode == KC_U || keycode == KC_I) {
         if (record->event.pressed) {
             if (herdr_target != HERDR_NONE) {
                 return true; // the other one is already held: just type
             }
-            herdr_target    = keycode == KC_Y ? HERDR_PANES : HERDR_TABS;
+            herdr_target    = keycode == KC_U ? HERDR_PANES : HERDR_TABS;
             herdr_key       = keycode;
             herdr_key_spent = false;
             herdr_acc_x     = 0;
@@ -364,13 +395,13 @@ bool process_record_keymap(uint16_t keycode, keyrecord_t* record) {
     return true;
 }
 
-static void herdr_ball(int16_t x, int16_t y) {
+static bool herdr_ball(herdr_target_t target, int16_t x, int16_t y) {
     if (x == 0 && y == 0) {
         if (timer_elapsed(herdr_last_motion) > APP_SWITCH_GESTURE_GAP_MS) {
             herdr_acc_x = 0;
             herdr_acc_y = 0;
         }
-        return;
+        return false;
     }
     herdr_last_motion = timer_read();
     herdr_acc_x += x;
@@ -378,9 +409,9 @@ static void herdr_ball(int16_t x, int16_t y) {
     const int32_t ax = abs(herdr_acc_x);
     const int32_t ay = abs(herdr_acc_y);
     if (ax < HERDR_STEP && ay < HERDR_STEP) {
-        return;
+        return false;
     }
-    const bool tabs = herdr_target == HERDR_TABS;
+    const bool tabs = target == HERDR_TABS;
     uint16_t   chord;
     if (ax >= ay) {
         const bool right = herdr_acc_x > 0;
@@ -390,9 +421,9 @@ static void herdr_ball(int16_t x, int16_t y) {
         chord           = tabs ? C(A(S(down ? KC_DOWN : KC_UP))) : C(A(down ? KC_J : KC_K));
     }
     tap_code16(chord);
-    herdr_key_spent = true;
-    herdr_acc_x     = 0;
-    herdr_acc_y     = 0;
+    herdr_acc_x = 0;
+    herdr_acc_y = 0;
+    return true;
 }
 
 report_mouse_t pointing_device_task_combined_keymap(report_mouse_t mouse_report) {
@@ -402,6 +433,22 @@ report_mouse_t pointing_device_task_combined_keymap(report_mouse_t mouse_report)
     }
     if (layer != BALL_VOLUME_LAYER) {
         media_reset_gesture();
+    }
+
+    if (herdr_layer_held && layer == BALL_SCROLL_LAYER) {
+        app_switch_end();
+        app_switch_reset_gesture();
+        if (herdr_layer_target == HERDR_NONE && (mouse_report.x != 0 || mouse_report.y != 0)) {
+            herdr_layer_target = timer_elapsed(herdr_layer_pressed_at) < HERDR_LAYER_PANES_MS ? HERDR_PANES : HERDR_TABS;
+        }
+        if (herdr_layer_target != HERDR_NONE) {
+            herdr_ball(herdr_layer_target, mouse_report.x, mouse_report.y);
+        }
+        mouse_report.x = 0;
+        mouse_report.y = 0;
+        mouse_report.h = 0;
+        mouse_report.v = 0;
+        return mouse_report;
     }
 
     if (layer != 0) {
@@ -433,7 +480,9 @@ report_mouse_t pointing_device_task_combined_keymap(report_mouse_t mouse_report)
     if (herdr_target != HERDR_NONE) {
         app_switch_end();
         app_switch_reset_gesture();
-        herdr_ball(mouse_report.x, mouse_report.y);
+        if (herdr_ball(herdr_target, mouse_report.x, mouse_report.y)) {
+            herdr_key_spent = true;
+        }
         mouse_report.x = 0;
         mouse_report.y = 0;
         return mouse_report;

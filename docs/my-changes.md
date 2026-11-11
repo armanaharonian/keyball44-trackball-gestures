@@ -2,6 +2,23 @@
 
 Every change made to this setup, newest first. Add a line here each time something changes.
 
+## 2026-11-11: Layer button + ball drives herdr; Space still scrolls
+
+- **What:** hold the layer button (`MO(1)`, left thumb) and roll the ball. If you start rolling within 150 ms of pressing it, the ball moves between herdr panes. If you start later, left/right changes tab and up/down changes workspace. The mode is picked on the first roll of each hold.
+- **Why:** Space (`LT(1, KC_SPC)`) turns on the same layer 1, so Space + ball keeps scrolling and the layer button was free.
+- **Kept:** the layer button still turns layer 1 on for its keys (numbers, arrows). Hold U / hold I + ball still work.
+- **How:** `process_record_keymap` in `keymap/keymap.c` tracks the physical `MO(BALL_SCROLL_LAYER)` press (`herdr_layer_held`, `herdr_layer_pressed_at`). `pointing_device_task_combined_keymap` checks it before layer 1's scroll. The 150 ms is `HERDR_LAYER_PANES_MS`.
+- **Undo:** reflash the keymap without the `herdr_layer_*` code.
+
+## 2026-11-11: herdr holds move to U and I; hold T talks to Handy; hold R renames the pane
+
+- **What:** hold `U` + ball moves between herdr panes (was `Y`). Hold `I` + ball: left/right changes tab, up/down changes workspace (was `U`). `Y` is a plain letter again.
+- **Hold T:** talks to Handy while held. Tap dance 7 hold went from `Ctrl+Space` to `LCAG(KC_T)` (`Ctrl+Option+Command+T`, held until you let go). The keyboard can't send Apple's `fn`, so Handy's Transcribe shortcut must be `ctrl+option+command+t`, without `fn`.
+- **Hold R:** renames the focused herdr pane. `R` is tap dance 11 (tap `r`, hold 200 ms for `QK_USER_0`). The firmware turns `QK_USER_0` into one `ctrl+alt+r` tap, which `~/.config/herdr/config.toml` maps to `rename_pane` (backup: `config.toml.bak18`).
+- **How:** `process_record_keymap` in `keymap/keymap.c` checks `KC_U`/`KC_I` instead of `KC_Y`/`KC_U`, and handles `HERDR_RENAME`. T and R live in `layouts/arman.vil` (backup: `layouts/arman.vil.bak-before-t-handy`).
+- **Typing:** `I` now types on release or when the next key is pressed, like `U`. `R` types on release, like the other tap-dance letters.
+- **Undo:** reflash the `20d0b27` keymap; put `300` back as tap dance 7's hold, and plain `KC_R` (21) on the R key.
+
 ## 2026-11-10: Hold Y + ball moves herdr panes, hold U + ball changes tab and workspace
 
 - **What:** hold `Y` and roll the ball to move between herdr panes. Hold `U` and roll: left/right changes tab, up/down changes workspace. Works in any app, with no detector. Without Y or U the ball is the app switcher. This replaces hold A + ball.
